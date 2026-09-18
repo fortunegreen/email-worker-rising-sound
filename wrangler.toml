@@ -1,0 +1,20 @@
+name = "email-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "email-worker-db"
+database_id = "89ce4a7d-4d20-4584-8782-1f98156ada2d"
+
+[vars]
+# Switch providers by changing this one line — no code changes required.
+# Options: "console" (logs only, safe default), "resend", "postmark", "sendgrid"
+EMAIL_PROVIDER = "resend"
+DEFAULT_FROM_ADDRESS = "hello@news.risingsoundwa.com.au"
+
+# Secrets are NOT set here. Set only the one(s) you need with:
+#   wrangler secret put RESEND_API_KEY
+#   wrangler secret put POSTMARK_SERVER_TOKEN
+#   wrangler secret put SENDGRID_API_KEY
+#   wrangler secret put API_SECRET   <- required; callers must send this in the x-api-key header

@@ -1,0 +1,16 @@
+{
+  "name": "email-worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply email-worker-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply email-worker-db --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0",
+    "typescript": "^5.5.0",
+    "@cloudflare/workers-types": "^5.0.0"
+  }
+}

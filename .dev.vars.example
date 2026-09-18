@@ -1,0 +1,3 @@
+RESEND_API_KEY=paste_your_new_rotated_resend_key_here
+API_SECRET=make_up_any_long_random_string_for_local_testing
+RESEND_AUDIENCE_ID=paste_your_resend_audience_id_here
