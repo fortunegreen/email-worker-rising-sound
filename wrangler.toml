@@ -12,8 +12,8 @@ database_id = "89ce4a7d-4d20-4584-8782-1f98156ada2d"
 # Options: "console" (logs only, safe default), "resend", "postmark", "sendgrid"
 EMAIL_PROVIDER = "resend"
 DEFAULT_FROM_ADDRESS = "hello@news.risingsoundwa.com.au"
-  STRIPE_PRICE_MEMBER = "REPLACE_WITH_YOUR_STRIPE_PRICE_ID"
-  STRIPE_PRICE_CHAMPION = "REPLACE_WITH_YOUR_STRIPE_PRICE_ID"
+  STRIPE_PRICE_MEMBER = "price_1UGtz323DnUymzhvW2bpOKOo"
+  STRIPE_PRICE_CHAMPION = "price_1UGu0T23DnUymzhvX60BgJuk"
 
 # Secrets are NOT set here. Set only the one(s) you need with:
 #   wrangler secret put RESEND_API_KEY
