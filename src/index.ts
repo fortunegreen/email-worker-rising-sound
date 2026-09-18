@@ -23,7 +23,7 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin');
 
-    if (request.method === 'OPTIONS' && url.pathname === '/subscribe') {
+    if (request.method === 'OPTIONS' && (url.pathname === '/subscribe' || url.pathname === '/contact')) {
       return withCors(new Response(null, { status: 204 }), origin);
     }
 
@@ -60,6 +60,54 @@ export default {
         subject: 'Welcome!',
         html: `<p>Thanks for subscribing${body.name ? `, ${body.name}` : ''}!</p>`,
         text: `Thanks for subscribing${body.name ? `, ${body.name}` : ''}!`,
+      });
+
+      return withCors(Response.json({ ok: true }), origin);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/contact') {
+      let body: any;
+      try {
+        body = await request.json();
+      } catch {
+        return withCors(Response.json({ error: 'invalid JSON body' }, { status: 400 }), origin);
+      }
+
+      // Honeypot — same pattern as /subscribe.
+      if (body.website) {
+        return withCors(Response.json({ ok: true }), origin);
+      }
+
+      const email = typeof body.email === 'string' ? body.email.trim() : '';
+      const message = typeof body.message === 'string' ? body.message.trim() : '';
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      const enquiry = typeof body.enquiry === 'string' ? body.enquiry.trim() : '';
+
+      if (!email || !email.includes('@') || !message) {
+        return withCors(Response.json({ error: 'a valid email and a message are required' }, { status: 400 }), origin);
+      }
+
+      // Notify the org. reply-to is the sender's address so replying from
+      // your inbox goes straight back to them, not to no-reply@.
+      const notifyOutcome = await sendEmail(env, {
+        to: 'hello@risingsoundwa.com.au',
+        replyTo: email,
+        subject: `New message from ${name || email}${enquiry ? ` (${enquiry})` : ''}`,
+        html: `<p><strong>From:</strong> ${name ? `${name} ` : ''}&lt;${email}&gt;</p>${enquiry ? `<p><strong>Re:</strong> ${enquiry}</p>` : ''}<p>${message.replace(/\n/g, '<br>')}</p>`,
+        text: `From: ${name ? `${name} ` : ''}<${email}>${enquiry ? `\nRe: ${enquiry}` : ''}\n\n${message}`,
+      });
+
+      if (notifyOutcome.status === 'failed') {
+        return withCors(Response.json({ error: notifyOutcome.error || 'failed to send' }, { status: 502 }), origin);
+      }
+
+      // Confirmation back to the sender — best-effort; don't fail the whole
+      // request if only this part has trouble.
+      await sendEmail(env, {
+        to: email,
+        subject: "We've got your message",
+        html: `<p>Thanks${name ? `, ${name}` : ''} — we've received your message and will get back to you soon.</p>`,
+        text: `Thanks${name ? `, ${name}` : ''} — we've received your message and will get back to you soon.`,
       });
 
       return withCors(Response.json({ ok: true }), origin);
