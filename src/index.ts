@@ -1,6 +1,8 @@
 import type { Env } from './types';
 import { sendEmail } from './email-service';
 import { addResendContact } from './resend-contacts';
+import { createCheckoutSession, verifyStripeSignature } from './stripe';
+import { createPendingMember, activateMemberByEmail, updateMemberBySubscription, listMembers } from './members-db';
 
 // Set these to your real site(s) so only they can call /subscribe from a
 // browser. Add/remove entries as your dev and production URLs change.
@@ -23,7 +25,7 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin');
 
-    if (request.method === 'OPTIONS' && (url.pathname === '/subscribe' || url.pathname === '/contact')) {
+    if (request.method === 'OPTIONS' && (url.pathname === '/subscribe' || url.pathname === '/contact' || url.pathname === '/membership/checkout')) {
       return withCors(new Response(null, { status: 204 }), origin);
     }
 
@@ -111,6 +113,118 @@ export default {
       });
 
       return withCors(Response.json({ ok: true }), origin);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/membership/checkout') {
+      let body: any;
+      try {
+        body = await request.json();
+      } catch {
+        return withCors(Response.json({ error: 'invalid JSON body' }, { status: 400 }), origin);
+      }
+
+      const email = typeof body.email === 'string' ? body.email.trim() : '';
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      const tier = body.tier === 'champion' ? 'champion' : body.tier === 'member' ? 'member' : '';
+
+      if (!email || !email.includes('@') || !tier) {
+        return withCors(Response.json({ error: 'a valid email and tier ("member" or "champion") are required' }, { status: 400 }), origin);
+      }
+
+      if (!env.STRIPE_SECRET_KEY) {
+        return withCors(Response.json({ error: 'server misconfigured: missing Stripe config' }, { status: 500 }), origin);
+      }
+
+      const priceId = tier === 'champion' ? env.STRIPE_PRICE_CHAMPION : env.STRIPE_PRICE_MEMBER;
+      if (!priceId) {
+        return withCors(Response.json({ error: `server misconfigured: no price configured for tier "${tier}"` }, { status: 500 }), origin);
+      }
+
+      // Only redirect back to an origin we recognise — never let the
+      // request dictate an arbitrary redirect target.
+      const returnOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+
+      const id = crypto.randomUUID();
+      await createPendingMember(env, { id, email, name, tier });
+
+      const result = await createCheckoutSession(
+        env.STRIPE_SECRET_KEY,
+        priceId,
+        email,
+        { member_id: id, tier, name },
+        `${returnOrigin}/?membership=success`,
+        `${returnOrigin}/?membership=cancelled`,
+      );
+
+      if (!result.ok) {
+        return withCors(Response.json({ error: result.error }, { status: 502 }), origin);
+      }
+
+      return withCors(Response.json({ ok: true, url: result.url }), origin);
+    }
+
+    // Stripe webhooks — no CORS (Stripe's servers call this, not a browser),
+    // and the raw body text is needed for signature verification, so this
+    // must NOT call request.json() before verifying.
+    if (request.method === 'POST' && url.pathname === '/webhooks/stripe') {
+      const rawBody = await request.text();
+      const signature = request.headers.get('Stripe-Signature');
+
+      if (!env.STRIPE_WEBHOOK_SECRET || !(await verifyStripeSignature(rawBody, signature, env.STRIPE_WEBHOOK_SECRET))) {
+        return Response.json({ error: 'invalid signature' }, { status: 400 });
+      }
+
+      const event = JSON.parse(rawBody);
+
+      try {
+        switch (event.type) {
+          case 'checkout.session.completed': {
+            const session = event.data.object;
+            const email = session.customer_email || session.customer_details?.email;
+            if (email && session.customer && session.subscription) {
+              await activateMemberByEmail(env, email, session.customer, session.subscription);
+              await sendEmail(env, {
+                to: email,
+                subject: 'Welcome to Rising Sound WA!',
+                html: `<p>Thanks for becoming a member — your membership is now active. We'll be in touch with what's on.</p>`,
+                text: `Thanks for becoming a member — your membership is now active. We'll be in touch with what's on.`,
+              });
+            }
+            break;
+          }
+          case 'customer.subscription.updated': {
+            const sub = event.data.object;
+            const periodEnd = sub.current_period_end
+              ? new Date(sub.current_period_end * 1000).toISOString()
+              : undefined;
+            await updateMemberBySubscription(env, sub.id, sub.status, periodEnd);
+            break;
+          }
+          case 'customer.subscription.deleted': {
+            const sub = event.data.object;
+            await updateMemberBySubscription(env, sub.id, 'canceled');
+            break;
+          }
+          // Other event types are received but intentionally not acted on.
+        }
+      } catch (err) {
+        // Log-and-succeed: Stripe retries aggressively on non-2xx responses,
+        // and a transient D1/email hiccup shouldn't trigger a retry storm.
+        console.error('stripe webhook handling error', err);
+      }
+
+      return Response.json({ received: true });
+    }
+
+    // Internal only — list members. No portal yet, so this is the "database
+    // of members" for now: query it with curl + x-api-key, or build a real
+    // view later.
+    if (request.method === 'GET' && url.pathname === '/members') {
+      const providedSecret = request.headers.get('x-api-key');
+      if (!env.API_SECRET || providedSecret !== env.API_SECRET) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      return Response.json({ members: await listMembers(env) });
     }
 
     if (request.method === 'POST' && url.pathname === '/send') {

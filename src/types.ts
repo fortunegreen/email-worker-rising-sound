@@ -8,6 +8,10 @@ export interface Env {
   POSTMARK_SERVER_TOKEN?: string;
   SENDGRID_API_KEY?: string;
   API_SECRET: string;          // required header value for POST /send
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_MEMBER?: string;
+  STRIPE_PRICE_CHAMPION?: string;
 }
 
 export interface OutgoingEmail {

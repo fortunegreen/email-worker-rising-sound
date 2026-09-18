@@ -135,6 +135,80 @@ attribute to something plausible for extra effect) and the `fetch` call:
 Replace `<your-subdomain>` with your actual `workers.dev` URL (or a custom
 domain if you attach one later).
 
+## Memberships (Stripe)
+
+Two endpoints plus a webhook handle recurring memberships, backed by a new
+`members` table (`migrations/0002_members.sql`).
+
+- **`POST /membership/checkout`** — public, same CORS pattern as `/subscribe`
+  and `/contact`. Takes `{ email, name, tier }` where `tier` is `"member"`
+  or `"champion"`. Creates a pending row in `members`, starts a Stripe
+  Checkout Session (subscription mode), and returns `{ url }` for the
+  browser to redirect to.
+- **`POST /webhooks/stripe`** — receives Stripe's events. No CORS (Stripe's
+  servers call this directly, not a browser) and no `x-api-key` — instead
+  it verifies Stripe's own signature on every request using
+  `STRIPE_WEBHOOK_SECRET`. Handles `checkout.session.completed` (activates
+  the member, sends a welcome email), `customer.subscription.updated`
+  (keeps status/renewal date in sync — e.g. flips to `past_due` on a failed
+  card), and `customer.subscription.deleted` (marks `canceled`).
+- **`GET /members`** — protected by `x-api-key` like `/send`. Returns the
+  full member list as JSON. There's no portal yet, so this is how you check
+  who's a member for now: `curl -H 'x-api-key: ...' https://email-worker.../members`.
+
+### Setup
+
+1. **In the Stripe dashboard**, create two recurring Products/Prices —
+   e.g. "Member" at $20/year and "Champion" at $100/year. Copy each
+   Price ID (starts with `price_`).
+2. Set `STRIPE_PRICE_MEMBER` and `STRIPE_PRICE_CHAMPION` in `wrangler.toml`
+   (and `.dev.vars` for local testing) to those Price IDs.
+3. Get your Stripe **Secret key** (Developers → API keys) and set it:
+   ```bash
+   wrangler secret put STRIPE_SECRET_KEY
+   ```
+4. **After deploying**, go to Stripe → Developers → Webhooks → Add
+   endpoint, pointing at `https://email-worker.../webhooks/stripe`, and
+   subscribe to: `checkout.session.completed`, `customer.subscription.updated`,
+   `customer.subscription.deleted`. Stripe gives you a signing secret
+   (starts with `whsec_`) for this specific endpoint — set it:
+   ```bash
+   wrangler secret put STRIPE_WEBHOOK_SECRET
+   ```
+   (For local testing, use the [Stripe CLI](https://docs.stripe.com/stripe-cli)'s
+   `stripe listen --forward-to localhost:8787/webhooks/stripe` — it prints
+   a separate `whsec_` value for local use, put that in `.dev.vars` instead.)
+5. Use Stripe's test-mode keys and test card numbers
+   (`4242 4242 4242 4242`, any future date/CVC) while wiring this up —
+   switch to live keys only once you've confirmed the whole flow works.
+
+### Wiring the buttons on the site
+
+Each tier's "Become a member" / "Join as champion" button should call
+`/membership/checkout` and redirect to the URL it returns:
+
+```js
+async function startCheckout(tier) {
+  const res = await fetch("https://email-worker.<your-subdomain>.workers.dev/membership/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tier, email: userEmail, name: userName }),
+  });
+  const data = await res.json();
+  if (data.ok && data.url) {
+    window.location.href = data.url; // redirect to Stripe Checkout
+  } else {
+    // show data.error
+  }
+}
+```
+
+You'll need an email (and ideally name) from the visitor before calling
+this — either a small form right before the tier buttons, or prompt for it
+inline. After payment, Stripe redirects back to `/?membership=success` or
+`/?membership=cancelled` on your site; you can check `location.search` for
+that and show a matching message.
+
 ## Adding a provider that's not scaffolded here
 
 1. Copy `src/providers/resend.ts` as a starting point.
