@@ -25,3 +25,4 @@ DEFAULT_FROM_ADDRESS = "hello@news.risingsoundwa.com.au"
 # Audience in the Resend dashboard first, then set its id as a var below
 # (not a secret; it's not sensitive, just an identifier):
 RESEND_AUDIENCE_ID = "547f5650-d14b-4214-a335-eede3cbeaa9b"
+RESEND_MEMBERS_AUDIENCE_ID = "f46e65c1-2e11-4103-aaf3-7d0cc6d5a920"

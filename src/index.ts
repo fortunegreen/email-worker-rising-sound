@@ -183,6 +183,12 @@ export default {
             const email = session.customer_email || session.customer_details?.email;
             if (email && session.customer && session.subscription) {
               await activateMemberByEmail(env, email, session.customer, session.subscription);
+
+              if (env.RESEND_API_KEY && env.RESEND_MEMBERS_AUDIENCE_ID) {
+                const name = session.metadata?.name;
+                await addResendContact(env.RESEND_API_KEY, env.RESEND_MEMBERS_AUDIENCE_ID, email, name);
+              }
+
               await sendEmail(env, {
                 to: email,
                 subject: 'Welcome to Rising Sound WA!',

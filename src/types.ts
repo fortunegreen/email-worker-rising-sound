@@ -5,6 +5,7 @@ export interface Env {
   // Add one secret per provider you might use; unused ones can be blank.
   RESEND_API_KEY?: string;
   RESEND_AUDIENCE_ID?: string;   // required if using /subscribe
+  RESEND_MEMBERS_AUDIENCE_ID?: string;   // required to add members/champions to a separate audience
   POSTMARK_SERVER_TOKEN?: string;
   SENDGRID_API_KEY?: string;
   API_SECRET: string;          // required header value for POST /send
